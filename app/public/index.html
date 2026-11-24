@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Trip & Split Bill Tracker</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧳</text></svg>">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="top">
+    <div class="wrap top-inner">
+      <div>
+        <div class="eyebrow" id="tripDates">—</div>
+        <h1 id="tripName">Memuat…</h1>
+        <div class="members" id="memberChips"></div>
+      </div>
+      <div class="top-actions">
+        <button class="btn ghost sync-btn" id="btnSync" title="Sinkron dengan Google Sheet"><span class="sync-dot" id="syncDot"></span><span id="syncLabel">Sync</span></button>
+        <button class="btn ghost" id="btnSettings" title="Pengaturan trip">⚙ Pengaturan</button>
+      </div>
+    </div>
+    <nav class="wrap tabs" id="tabs">
+      <button data-tab="dashboard" class="active">Ringkasan</button>
+      <button data-tab="itinerary">Itinerary</button>
+      <button data-tab="expenses">Pengeluaran</button>
+      <button data-tab="split">Split Bill</button>
+    </nav>
+  </header>
+
+  <main class="wrap" id="view"></main>
+
+  <dialog id="modal">
+    <form method="dialog" id="modalForm">
+      <div class="modal-head">
+        <h2 id="modalTitle"></h2>
+        <button type="button" class="icon-btn" data-close aria-label="Tutup">✕</button>
+      </div>
+      <div id="modalBody"></div>
+      <div class="modal-foot" id="modalFoot"></div>
+    </form>
+  </dialog>
+
+  <dialog id="confirmDlg" class="confirm">
+    <form method="dialog">
+      <div class="confirm-body">
+        <div class="confirm-icon">!</div>
+        <div><h2 id="confirmTitle"></h2><p id="confirmMsg" class="sub"></p></div>
+      </div>
+      <div class="modal-foot">
+        <button value="no" class="btn ghost">Batal</button>
+        <button value="yes" class="btn btn-danger" id="confirmOk">Hapus</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div class="toast" id="toast"><span id="toastMsg"></span><button type="button" id="toastUndo">Urungkan</button></div>
+  <script src="app.js"></script>
+</body>
+</html>

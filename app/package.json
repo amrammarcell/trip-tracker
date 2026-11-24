@@ -1,0 +1,10 @@
+{
+  "name": "trip-split-tracker",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Trip tracker & split bill tracker (localhost) berbasis FILE KEUANGAN NEGARA.xlsx",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  }
+}

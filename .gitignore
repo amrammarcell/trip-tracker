@@ -1,0 +1,16 @@
+# Data lokal aplikasi (berisi pengeluaran, link Google Sheet & token sync)
+app/data/
+
+# File Excel sumber (data keuangan asli)
+*.xlsx
+
+# Node
+node_modules/
+npm-debug.log*
+
+# OS / editor
+.DS_Store
+Thumbs.db
+desktop.ini
+~$*.xlsx
+.claude/settings.local.json
