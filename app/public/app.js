@@ -12,7 +12,7 @@ const fmtShort = d => d ? new Date(d + 'T00:00:00').toLocaleDateString('id-ID', 
 const PALETTE = ['#0f766e', '#2563eb', '#d97706', '#7c3aed', '#db2777', '#059669', '#dc2626', '#4f46e5', '#0891b2', '#65a30d'];
 const color = name => PALETTE[Math.max(0, S.trip.members.indexOf(name)) % PALETTE.length];
 const catColor = c => ['var(--c1)', 'var(--c2)', 'var(--c3)', 'var(--c4)', 'var(--c5)', 'var(--c6)'][Math.max(0, S.trip.categories.indexOf(c)) % 6];
-const CAT_ICON = { Makan: '🍜', Transportasi: '🚗', Jajan: '🧋', 'Lain-lain': '📦', Penginapan: '🏨', Akomodasi: '🏨', Tiket: '🎟️', Belanja: '🛍️' };
+const CAT_ICON = { Makan: '🍜', Transportasi: '🚗', Jajan: '🍦', 'Lain-lain': '📦', Penginapan: '🏨', Akomodasi: '🏨', Tiket: '🎟️', Belanja: '🛍️' };
 const catIcon = c => CAT_ICON[c] || '💸';
 const avatarStack = names => `<span class="stack">${names.slice(0, 5).map(n => avatar(n)).join('')}${names.length > 5 ? `<span class="avatar more">+${names.length - 5}</span>` : ''}</span>`;
 const avatar = n => `<span class="avatar" style="background:${color(n)}">${esc((n || '?')[0].toUpperCase())}</span>`;
@@ -364,7 +364,7 @@ function viewDashboard() {
   const outstanding = sug.reduce((s, x) => s + x.amount, 0);
   const byCat = {};
   S.expenses.forEach(e => (byCat[e.category] = (byCat[e.category] || 0) + (+e.amount || 0)));
-  const cats = Object.entries(byCat).sort((a, b) => b[1] - a[1]);
+  const cats = Object.entries(byCat).filter(([, a]) => a > 0).sort((a, b) => b[1] - a[1]);
   const maxCat = Math.max(1, ...cats.map(c => c[1]));
   const maxShare = Math.max(1, ...Object.values(b).map(x => Math.max(x.share, x.paid)));
   const budget = +S.trip.budget || 0;
@@ -685,12 +685,14 @@ function staticSettingsForm() {
         <button type="button" class="btn ghost" id="exportJson">⬇ Export JSON</button>
         <button type="button" class="btn ghost" id="exportCsv">⬇ Export CSV pengeluaran</button>
         <button type="button" class="btn danger" id="resetLocal">Hapus data browser</button>
-      </div></div>`, 'Simpan', () => {
+      </div></div>
+    <button type="button" class="btn ghost" id="openInstall" style="width:100%;justify-content:center">📱 Pasang di HP</button>`, 'Simpan', () => {
       S.trip.name = val('sn') || 'Trip'; S.trip.budget = +val('sb') || 0;
       persist('Pengaturan disimpan');
     });
   $('#exportJson').onclick = () => download('trip-data.json', JSON.stringify(S, null, 2), 'application/json');
   $('#exportCsv').onclick = exportCsv;
+  $('#openInstall').onclick = () => { closeModal(); installGuide(); };
   $('#resetLocal').onclick = async () => {
     closeModal();
     if (!(await ask('Hapus data di browser ini?', 'Pembayaran yang dicatat, centang itinerary, nama trip, dan budget di browser ini akan dihapus. Data di Google Sheet tidak berubah.'))) return;
@@ -722,7 +724,8 @@ function settingsForm() {
         <button type="button" class="btn ghost" id="exportCsv">⬇ Export CSV pengeluaran</button>
         <button type="button" class="btn danger" id="reimport">↻ Import ulang dari Excel</button>
       </div>
-      <p class="sub">Import ulang akan menimpa semua data dengan isi “FILE KEUANGAN NEGARA.xlsx”.</p></div>`,
+      <p class="sub">Import ulang akan menimpa semua data dengan isi “FILE KEUANGAN NEGARA.xlsx”.</p></div>
+    <button type="button" class="btn ghost" id="openInstall" style="width:100%;justify-content:center">📱 Pasang di HP</button>`,
     'Simpan', () => {
       const cats = val('sc').split(',').map(s => s.trim()).filter(Boolean);
       S.trip = { ...S.trip, name: val('sn') || 'Trip', start: val('ss'), end: val('se'), budget: +val('sb') || 0, members, categories: cats.length ? cats : S.trip.categories };
@@ -735,6 +738,7 @@ function settingsForm() {
   $('#memList').onclick = ev => { const m = ev.target.dataset.rm; if (m) { members = members.filter(x => x !== m); drawMembers(); } };
   $('#exportJson').onclick = () => download('trip-data.json', JSON.stringify(S, null, 2), 'application/json');
   $('#exportCsv').onclick = exportCsv;
+  $('#openInstall').onclick = () => { closeModal(); installGuide(); };
   $('#reimport').onclick = async () => {
     closeModal();
     if (!(await ask('Import ulang dari Excel?', 'Semua data akan ditimpa dengan isi file Excel. Perubahan yang dibuat di aplikasi akan hilang.', 'Timpa data'))) return;
@@ -755,7 +759,12 @@ document.addEventListener('click', ev => {
   if (t.dataset.close !== undefined) return closeModal();
   if (t.id === 'btnSettings') return settingsForm();
   if (t.id === 'btnSync') return syncForm();
-  if (t.dataset.tab) { tab = t.dataset.tab; localStorage.setItem('tab', tab); return render(); }
+  if (t.dataset.tab) {
+    tab = t.dataset.tab; localStorage.setItem('tab', tab);
+    history.replaceState(null, '', '#' + tab);
+    render(); window.scrollTo({ top: 0 });
+    return;
+  }
   const id = t.dataset.id;
   switch (t.dataset.act) {
     case 'add-exp': return expenseForm();
@@ -786,6 +795,60 @@ $('#modalForm').addEventListener('submit', ev => {
   ev.preventDefault();
   if (onSubmit && onSubmit() !== false) closeModal();
 });
+
+/* ---------------- Mobile app (PWA): install, offline, deep links ---------------- */
+const TABS = ['dashboard', 'itinerary', 'expenses', 'split'];
+if (TABS.includes(location.hash.slice(1))) tab = location.hash.slice(1);
+window.addEventListener('hashchange', () => { const h = location.hash.slice(1); if (TABS.includes(h) && h !== tab && S) { tab = h; render(); } });
+
+if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
+  const hadController = !!navigator.serviceWorker.controller;
+  window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(e => console.warn('SW', e)));
+  // A new deploy activated a new service worker → reload once so the new version is shown
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!hadController || sessionStorage.getItem('swReloaded')) return;
+    try { sessionStorage.setItem('swReloaded', '1'); } catch (e) {}
+    location.reload();
+  });
+}
+
+const isStandalone = () => window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+const isIOS = () => /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const isMobile = () => isIOS() || /android/i.test(navigator.userAgent);
+let installEvt = null;
+function showInstallBar() {
+  if (isStandalone() || LS.get('installDismissed', 0) > Date.now()) return;
+  const bar = $('#installBar');
+  if (installEvt) { $('#installHint').textContent = 'Buka seperti aplikasi, bisa offline.'; $('#installBtn').hidden = false; }
+  else if (isIOS()) { $('#installHint').innerHTML = 'Ketuk <span class="ios-share" aria-label="Bagikan"></span> lalu <b>“Add to Home Screen”</b>.'; $('#installBtn').hidden = true; }
+  else return;
+  bar.hidden = false;
+}
+window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); installEvt = e; if (isMobile()) showInstallBar(); });
+window.addEventListener('appinstalled', () => { $('#installBar').hidden = true; installEvt = null; toast('Aplikasi terpasang 🎉'); });
+$('#installBtn').onclick = async () => {
+  if (!installEvt) return installGuide();
+  installEvt.prompt();
+  const { outcome } = await installEvt.userChoice;
+  installEvt = null; $('#installBar').hidden = true;
+  if (outcome === 'accepted') toast('Memasang aplikasi…');
+};
+$('#installClose').onclick = () => { $('#installBar').hidden = true; LS.set('installDismissed', Date.now() + 7 * 864e5); };
+if (isIOS()) setTimeout(showInstallBar, 2500);
+
+function installGuide() {
+  openModal('Pasang di HP', `
+    ${isStandalone() ? '<div class="ok-banner" style="margin-bottom:12px">Aplikasi sudah terpasang ✓</div>' : ''}
+    <div class="field"><label>📱 iPhone / iPad (Safari)</label>
+      <ol class="steps"><li>Buka halaman ini di <b>Safari</b>.</li><li>Ketuk tombol <b>Bagikan</b> <span class="ios-share"></span> di bawah.</li><li>Pilih <b>“Add to Home Screen”</b> / <b>“Tambah ke Layar Utama”</b>, lalu <b>Add</b>.</li></ol></div>
+    <div class="field"><label>🤖 Android (Chrome)</label>
+      <ol class="steps"><li>Ketuk menu <b>⋮</b> di kanan atas.</li><li>Pilih <b>“Install app”</b> / <b>“Tambahkan ke layar utama”</b>.</li></ol>
+      ${installEvt ? '<button type="button" class="btn" id="gInstall">Pasang sekarang</button>' : ''}</div>
+    <p class="sub">Setelah terpasang, aplikasi terbuka layar penuh seperti aplikasi biasa dan tetap bisa dibuka saat offline (menampilkan data terakhir).</p>`,
+    'Tutup', () => {});
+  const g = $('#gInstall');
+  if (g) g.onclick = () => { closeModal(); $('#installBtn').click(); };
+}
 
 (async () => {
   // Server available (npm start)? Use it. Otherwise (GitHub Pages / static hosting) read the Sheet directly.

@@ -2,9 +2,20 @@
 <html lang="id">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Trip & Split Bill Tracker</title>
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧳</text></svg>">
+  <meta name="description" content="Itinerary dan split bill perjalanan, tersinkron dengan Google Sheet.">
+  <meta name="theme-color" content="#0f766e">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+  <!-- iOS: home-screen icon, full-screen standalone, status bar over the gradient header -->
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Trip Tracker">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="format-detection" content="telephone=no">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -17,18 +28,25 @@
       </div>
       <div class="top-actions">
         <button class="btn ghost sync-btn" id="btnSync" title="Sinkron dengan Google Sheet"><span class="sync-dot" id="syncDot"></span><span id="syncLabel">Sync</span></button>
-        <button class="btn ghost" id="btnSettings" title="Pengaturan trip">⚙ Pengaturan</button>
+        <button class="btn ghost" id="btnSettings" title="Pengaturan trip" aria-label="Pengaturan">⚙<span class="btn-text"> Pengaturan</span></button>
       </div>
     </div>
-    <nav class="wrap tabs" id="tabs">
-      <button data-tab="dashboard" class="active">Ringkasan</button>
-      <button data-tab="itinerary">Itinerary</button>
-      <button data-tab="expenses">Pengeluaran</button>
-      <button data-tab="split">Split Bill</button>
+    <nav class="wrap tabs" id="tabs" aria-label="Menu utama">
+      <button data-tab="dashboard" class="active"><span class="tab-ico" aria-hidden="true">🏠</span><span class="tab-lbl">Ringkasan</span></button>
+      <button data-tab="itinerary"><span class="tab-ico" aria-hidden="true">🗓️</span><span class="tab-lbl">Itinerary</span></button>
+      <button data-tab="expenses"><span class="tab-ico" aria-hidden="true">🧾</span><span class="tab-lbl">Pengeluaran</span></button>
+      <button data-tab="split"><span class="tab-ico" aria-hidden="true">💸</span><span class="tab-lbl">Split Bill</span></button>
     </nav>
   </header>
 
   <main class="wrap" id="view"></main>
+
+  <div class="install-bar" id="installBar" hidden>
+    <img src="icons/icon-192.png" alt="" width="40" height="40">
+    <div class="install-text"><b>Pasang di HP</b><span id="installHint">Buka seperti aplikasi, bisa offline.</span></div>
+    <button type="button" class="btn sm" id="installBtn">Pasang</button>
+    <button type="button" class="icon-btn" id="installClose" aria-label="Tutup">✕</button>
+  </div>
 
   <dialog id="modal">
     <form method="dialog" id="modalForm">

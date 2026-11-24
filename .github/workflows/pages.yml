@@ -23,6 +23,8 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
+      - name: Stamp service worker with commit so installed apps pick up the new version
+        run: sed -i "s/const VERSION = 'v1'/const VERSION = '${GITHUB_SHA::8}'/" app/public/sw.js
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

@@ -1,0 +1,23 @@
+{
+  "name": "Trip & Split Bill Tracker",
+  "short_name": "Trip Tracker",
+  "description": "Itinerary dan split bill perjalanan, tersinkron dengan Google Sheet.",
+  "lang": "id",
+  "id": "./",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f5f6f8",
+  "theme_color": "#0f766e",
+  "categories": ["travel", "finance"],
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "Split Bill", "url": "./#split", "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }] },
+    { "name": "Pengeluaran", "url": "./#expenses", "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }] }
+  ]
+}

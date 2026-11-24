@@ -30,5 +30,12 @@ Versi online tidak punya server, jadi:
 
 Pengaturan awal (sekali saja): buka **Settings → Pages → Source: GitHub Actions**.
 
+### Pasang di HP (iOS & Android)
+Versi online bisa dipasang seperti aplikasi biasa (PWA): ada ikon di layar utama, terbuka layar penuh, dan tetap bisa dibuka saat offline dengan menampilkan data terakhir.
+- **iPhone/iPad:** buka di Safari → tombol **Bagikan** → **Add to Home Screen**
+- **Android:** buka di Chrome → muncul tombol **Pasang**, atau lewat menu **⋮ → Install app**
+
+Kalau ada versi baru yang di-deploy, aplikasi yang sudah terpasang akan ter-update sendiri. Ikon bisa dibuat ulang dengan `node app/tools/make-icons.js`.
+
 ## Data
 Data tersimpan di `app/data/` (tidak ikut di-commit). Saat pertama kali dijalankan, data diambil dari `FILE KEUANGAN NEGARA.xlsx` di root repo kalau file itu ada.
