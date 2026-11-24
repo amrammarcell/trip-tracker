@@ -48,6 +48,47 @@ function removeWithUndo(key, id, label) {
   toast(label + ' dihapus', () => { S[key] = before; if (extra) S.itinerary = extra; persist('Dikembalikan'); });
 }
 
+/* ---------------- Mode: 'server' (Node, localhost) or 'static' (GitHub Pages, no backend) ---------------- */
+let MODE = 'server';
+const RO = () => MODE === 'static'; // in static mode, expenses & itinerary come from the Sheet (read-only)
+const LS = {
+  get(k, d) { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} },
+  del(k) { try { localStorage.removeItem(k); } catch (e) {} },
+};
+const staticSheetUrl = () => LS.get('sheetUrl', '') || (window.TRIP_CONFIG && window.TRIP_CONFIG.sheetUrl) || '';
+const sheetIdOf = u => (String(u || '').match(/\/spreadsheets\/d\/([\w-]+)/) || [])[1];
+const doneKeyOf = (s, i) => [(s.days.find(d => d.id === i.dayId) || {}).label, i.start, i.activity, i.location].join('|');
+// App-only data kept in this browser: trip name/budget, payments, itinerary check marks
+function saveLocal() {
+  LS.set('trip-local', {
+    name: S.trip.name, budget: S.trip.budget || 0, payments: S.payments,
+    done: S.itinerary.filter(i => i.done).map(i => doneKeyOf(S, i)),
+  });
+}
+function applyLocal(state) {
+  const l = LS.get('trip-local', {});
+  if (l.name) state.trip.name = l.name;
+  state.trip.budget = l.budget || 0;
+  state.payments = (l.payments || []).filter(p => state.trip.members.includes(p.from) && state.trip.members.includes(p.to));
+  const done = new Set(l.done || []);
+  state.itinerary.forEach(i => (i.done = done.has(doneKeyOf(state, i))));
+  return state;
+}
+async function staticFetchSheet() {
+  const id = sheetIdOf(staticSheetUrl());
+  if (!id) throw new Error('Link Google Sheet belum diatur');
+  let r;
+  try { r = await fetch(`https://docs.google.com/spreadsheets/d/${id}/export?format=xlsx`, { cache: 'no-store' }); }
+  catch (e) { throw new Error('Sheet tidak bisa diakses. Pastikan dibagikan “Anyone with the link”.'); }
+  if (!r.ok) throw new Error('Google Sheet membalas ' + r.status);
+  const fresh = SheetImport.importFromSheets(await SheetImport.readXlsxBrowser(await r.arrayBuffer()));
+  if (!fresh.trip.members.length) throw new Error('Format sheet tidak dikenali');
+  LS.set('trip-cache', fresh);
+  LS.set('trip-lastPull', new Date().toISOString());
+  return applyLocal(fresh);
+}
+
 async function api(method, url, body) {
   const r = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : undefined });
   const j = await r.json();
@@ -55,6 +96,7 @@ async function api(method, url, body) {
   return j;
 }
 async function persist(msg) {
+  if (MODE === 'static') { saveLocal(); if (msg) toast(msg); return render(); }
   try {
     const r = await api('PUT', '/api/data', S);
     if (r.sync) SYNC = r.sync;
@@ -77,6 +119,13 @@ const timeAgo = iso => {
 };
 function renderSyncBadge() {
   const dot = $('#syncDot'), label = $('#syncLabel');
+  if (MODE === 'static') {
+    const err = renderSyncBadge.err;
+    dot.className = 'sync-dot ' + (syncBusy ? 'busy' : err ? 'warn' : 'ok');
+    label.textContent = syncBusy ? 'Menarik…' : err ? 'Gagal sinkron' : 'Tersinkron';
+    $('#btnSync').title = err ? err : 'Diambil dari Google Sheet ' + timeAgo(LS.get('trip-lastPull', null));
+    return;
+  }
   const on = SYNC.sheetUrl || SYNC.scriptUrl;
   let st = 'off', text = 'Sync';
   if (syncBusy) { st = 'busy'; text = syncBusy === 'push' ? 'Mengirim…' : 'Menarik…'; }
@@ -89,6 +138,20 @@ function renderSyncBadge() {
 async function doPull({ silent = false, force = false } = {}) {
   if (syncBusy) return;
   syncBusy = 'pull'; renderSyncBadge();
+  if (MODE === 'static') {
+    try {
+      const next = await staticFetchSheet();
+      const changed = !S || JSON.stringify(stripIds(S)) !== JSON.stringify(stripIds(next));
+      S = next; renderSyncBadge.err = '';
+      render();
+      if (!silent || (changed && S)) toast(changed ? `Data diperbarui dari Google Sheet (${S.expenses.length} pengeluaran)` : 'Sudah sama dengan Google Sheet');
+    } catch (e) {
+      renderSyncBadge.err = e.message;
+      if (!silent) toast('Gagal menarik: ' + e.message); else console.warn(e);
+      if (!S) $('#view').innerHTML = `<div class="card empty">Gagal mengambil data dari Google Sheet: ${esc(e.message)}</div>`;
+    } finally { syncBusy = ''; renderSyncBadge(); }
+    return;
+  }
   try {
     const r = await fetch('/api/sync/pull', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ force }) });
     const j = await r.json();
@@ -125,8 +188,9 @@ async function doPush({ silent = false } = {}) {
 function schedulePush() { clearTimeout(pushTimer); pushTimer = setTimeout(() => doPush({ silent: true }), 1500); }
 // Auto: pull every 60s when idle (and nothing local is pending)
 setInterval(() => {
-  if (!SYNC.auto || !(SYNC.sheetUrl || SYNC.scriptUrl) || SYNC.dirty || syncBusy || document.hidden) return;
-  if ($('#modal').open || $('#confirmDlg').open) return;
+  if (syncBusy || document.hidden || $('#modal').open || $('#confirmDlg').open) return;
+  if (MODE === 'static') return doPull({ silent: true });
+  if (!SYNC.auto || !(SYNC.sheetUrl || SYNC.scriptUrl) || SYNC.dirty) return;
   doPull({ silent: true });
 }, 60000);
 
@@ -139,7 +203,34 @@ async function copyText(text) {
   ta.remove(); return ok;
 }
 
+function staticSyncForm() {
+  const url = staticSheetUrl();
+  openModal('Sinkron Google Sheet', `
+    <div class="sync-status">
+      <div><span class="sync-dot ${renderSyncBadge.err ? 'warn' : 'ok'}"></span><b>${renderSyncBadge.err ? 'Gagal sinkron' : 'Tersinkron dengan Google Sheet'}</b></div>
+      <div class="sub">Diambil ${timeAgo(LS.get('trip-lastPull', null))} · otomatis tiap 1 menit saat halaman terbuka${renderSyncBadge.err ? ' · <span class="neg">' + esc(renderSyncBadge.err) + '</span>' : ''}</div>
+      <div class="sync-actions">
+        <button type="button" class="btn" id="sPull">⬇ Tarik sekarang</button>
+        ${sheetIdOf(url) ? `<a class="btn ghost" href="https://docs.google.com/spreadsheets/d/${sheetIdOf(url)}/edit" target="_blank" rel="noopener">↗ Buka Google Sheet</a>` : ''}
+      </div>
+    </div>
+    <p class="sub">Versi online ini membaca data langsung dari Google Sheet. Untuk menambah atau mengubah pengeluaran & itinerary, edit di Sheet, lalu halaman ini ikut ter-update.
+      Pembayaran (“Tandai lunas”), centang itinerary, nama trip & budget disimpan <b>di browser ini saja</b>.</p>
+    <details class="field step"><summary><b>Ganti link Google Sheet</b></summary>
+      <input id="sUrl" placeholder="https://docs.google.com/spreadsheets/d/…" value="${esc(url)}">
+      <p class="sub">Hanya berlaku di browser ini. Kosongkan untuk kembali ke Sheet bawaan.</p>
+    </details>`, 'Simpan', () => {
+      const u = val('sUrl');
+      if (u && !sheetIdOf(u)) return toast('Link Google Sheet tidak valid'), false;
+      const changed = u !== url;
+      if (u && u !== (window.TRIP_CONFIG && window.TRIP_CONFIG.sheetUrl)) LS.set('sheetUrl', u); else LS.del('sheetUrl');
+      if (changed) doPull();
+    });
+  $('#sPull').onclick = () => { closeModal(); doPull(); };
+}
+
 function syncForm() {
+  if (MODE === 'static') return staticSyncForm();
   const two = !!SYNC.scriptUrl;
   openModal('Sinkron Google Sheet', `
     <div class="sync-status">
@@ -336,27 +427,34 @@ function viewItinerary() {
   const days = [...S.days].sort((a, b) => (a.date || '').localeCompare(b.date || ''));
   return `
   <div class="section-head"><div><h2>Itinerary</h2><p class="sub">Jadwal perjalanan per hari. Centang kegiatan yang sudah selesai.</p></div>
-    <button class="btn" data-act="add-day">+ Tambah hari</button></div>
+    ${RO() ? '' : '<button class="btn" data-act="add-day">+ Tambah hari</button>'}</div>
+  ${sheetBanner('itinerary')}
   ${days.length ? days.map(d => {
     const items = S.itinerary.filter(i => i.dayId === d.id).sort(byTime);
     const spent = S.expenses.filter(e => e.date === d.date).reduce((s, e) => s + (+e.amount || 0), 0);
     return `<div class="card day">
       <div class="day-head"><div><h3>${esc(d.label)} <span class="muted" style="font-weight:500">· ${fmtDate(d.date)}</span></h3>
         <p class="sub">${items.length} kegiatan${spent ? ' · pengeluaran tanggal ini ' + rp(spent) : ''}</p></div>
-        <div><button class="btn sm" data-act="add-item" data-id="${d.id}">+ Kegiatan</button>
+        ${RO() ? '' : `<div><button class="btn sm" data-act="add-item" data-id="${d.id}">+ Kegiatan</button>
         <button class="icon-btn" data-act="edit-day" data-id="${d.id}" title="Ubah hari">✎</button>
-        <button class="icon-btn" data-act="del-day" data-id="${d.id}" title="Hapus hari">🗑</button></div></div>
+        <button class="icon-btn" data-act="del-day" data-id="${d.id}" title="Hapus hari">🗑</button></div>`}</div>
       ${items.length ? `<ul class="timeline">${items.map(i => `
         <li class="tl-item ${i.done ? 'done' : ''}">
           <input type="checkbox" data-act="toggle-item" data-id="${i.id}" ${i.done ? 'checked' : ''} aria-label="Selesai">
           <div class="tl-time num">${esc(i.start || '—')}${i.end ? ` – ${esc(i.end)}` : ''}<small>${duration(i.start, i.end)}</small></div>
           <div><div class="tl-title">${esc(i.activity || '(tanpa judul)')}</div>
             <div class="tl-meta">${i.location ? '📍 ' + esc(i.location) : ''}${i.location && i.notes ? ' · ' : ''}${esc(i.notes || '')}</div></div>
-          <div class="tl-actions"><button class="icon-btn" data-act="edit-item" data-id="${i.id}" title="Ubah">✎</button>
-            <button class="icon-btn" data-act="del-item" data-id="${i.id}" title="Hapus">🗑</button></div>
+          ${RO() ? '<div></div>' : `<div class="tl-actions"><button class="icon-btn" data-act="edit-item" data-id="${i.id}" title="Ubah">✎</button>
+            <button class="icon-btn" data-act="del-item" data-id="${i.id}" title="Hapus">🗑</button></div>`}
         </li>`).join('')}</ul>` : '<div class="empty">Belum ada kegiatan di hari ini</div>'}
     </div>`;
-  }).join('') : '<div class="card empty">Belum ada hari. Klik “Tambah hari”.</div>'}`;
+  }).join('') : `<div class="card empty">${RO() ? 'Belum ada jadwal di Google Sheet.' : 'Belum ada hari. Klik “Tambah hari”.'}</div>`}`;
+}
+function sheetBanner(what) {
+  if (!RO()) return '';
+  const id = sheetIdOf(staticSheetUrl());
+  return `<div class="sheet-banner"><span>📄 Data ${what === 'itinerary' ? 'itinerary' : 'pengeluaran'} diambil dari Google Sheet dan ikut ter-update otomatis. Untuk menambah atau mengubah, edit di Sheet.</span>
+    ${id ? `<a class="btn ghost sm" href="https://docs.google.com/spreadsheets/d/${id}/edit" target="_blank" rel="noopener">↗ Buka Sheet</a>` : ''}</div>`;
 }
 
 function viewExpenses() {
@@ -367,7 +465,8 @@ function viewExpenses() {
   const total = list.reduce((s, e) => s + (+e.amount || 0), 0);
   return `
   <div class="section-head"><div><h2>Pengeluaran</h2><p class="sub">Catat setiap pengeluaran, siapa yang bayar, dan dibagi ke siapa saja.</p></div>
-    <button class="btn" data-act="add-exp">+ Tambah pengeluaran</button></div>
+    ${RO() ? '' : '<button class="btn" data-act="add-exp">+ Tambah pengeluaran</button>'}</div>
+  ${sheetBanner('expenses')}
   <div class="filters">
     <input type="search" id="fq" placeholder="Cari keterangan…" value="${esc(F.q)}">
     <select id="fcat"><option value="">Semua kategori</option>${S.trip.categories.map(c => `<option ${F.cat === c ? 'selected' : ''}>${esc(c)}</option>`).join('')}</select>
@@ -394,16 +493,16 @@ function expenseRow(e) {
     <div class="exp-main">
       <div class="exp-title">${esc(e.desc || '—')}</div>
       <div class="exp-meta"><span class="tag" style="color:${catColor(e.category)}">${esc(e.category)}</span>
-        ${e.autoSplit ? '<span class="tag warn-tag" title="Kolom pembagian di Google Sheet masih kosong, jadi sementara dibagi rata ke semua anggota. Ubah pengeluaran ini untuk mengatur pembagiannya.">⚠ dibagi rata otomatis</span>' : ''}
+        ${e.autoSplit ? '<span class="tag warn-tag" title="Kolom pembagian di Google Sheet masih kosong, jadi sementara dibagi rata ke semua anggota. Isi kolom pembagiannya di Sheet (atau ubah pengeluaran ini) untuk mengaturnya.">⚠ dibagi rata otomatis</span>' : ''}
         <span>dibayar <b>${esc(e.paidBy)}</b></span>
         <span class="split-info" title="${esc(sp.map(m => m + ': ' + rp(e.splits[m])).join('\n'))}">${avatarStack(sp)} ${sp.length === S.trip.members.length ? 'semua' : sp.length + ' orang'} · ${rp(e.amount / (sp.length || 1))}/org</span>
       </div>
     </div>
     <div class="exp-amt num">${rp(e.amount)}${mine ? `<small>bagian ${esc(F.member)}: ${rp(mine)}</small>` : ''}</div>
-    <div class="exp-actions">
+    ${RO() ? '<div></div>' : `<div class="exp-actions">
       <button class="icon-btn" data-act="edit-exp" data-id="${e.id}" title="Ubah" aria-label="Ubah">✎</button>
       <button class="icon-btn del" data-act="del-exp" data-id="${e.id}" title="Hapus" aria-label="Hapus">🗑</button>
-    </div>
+    </div>`}
   </div>`;
 }
 
@@ -569,7 +668,39 @@ function paymentForm(pre) {
     });
 }
 
+function exportCsv() {
+  const M = S.trip.members, q = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
+  const rows = [['Tanggal', 'Keterangan', 'Kategori', 'Jumlah', 'Dibayar oleh', ...M].map(q).join(',')];
+  S.expenses.forEach(e => rows.push([e.date, e.desc, e.category, e.amount, e.paidBy, ...M.map(m => e.splits?.[m] || 0)].map(q).join(',')));
+  download('pengeluaran.csv', '﻿' + rows.join('\n'), 'text/csv');
+}
+function staticSettingsForm() {
+  openModal('Pengaturan trip', `
+    <div class="field"><label>Nama trip</label><input id="sn" value="${esc(S.trip.name)}"></div>
+    <div class="field"><label>Budget total (Rp, opsional)</label><input id="sb" type="number" min="0" value="${S.trip.budget || ''}"></div>
+    <p class="sub">Anggota, kategori, tanggal, pengeluaran & itinerary mengikuti Google Sheet. Nama trip, budget, pembayaran, dan centang disimpan di browser ini saja.</p>
+    <hr style="border:0;border-top:1px solid var(--border);margin:16px 0">
+    <div class="field"><label>Data</label>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button type="button" class="btn ghost" id="exportJson">⬇ Export JSON</button>
+        <button type="button" class="btn ghost" id="exportCsv">⬇ Export CSV pengeluaran</button>
+        <button type="button" class="btn danger" id="resetLocal">Hapus data browser</button>
+      </div></div>`, 'Simpan', () => {
+      S.trip.name = val('sn') || 'Trip'; S.trip.budget = +val('sb') || 0;
+      persist('Pengaturan disimpan');
+    });
+  $('#exportJson').onclick = () => download('trip-data.json', JSON.stringify(S, null, 2), 'application/json');
+  $('#exportCsv').onclick = exportCsv;
+  $('#resetLocal').onclick = async () => {
+    closeModal();
+    if (!(await ask('Hapus data di browser ini?', 'Pembayaran yang dicatat, centang itinerary, nama trip, dan budget di browser ini akan dihapus. Data di Google Sheet tidak berubah.'))) return;
+    ['trip-local', 'trip-cache', 'sheetUrl'].forEach(LS.del);
+    S = null; doPull();
+  };
+}
+
 function settingsForm() {
+  if (MODE === 'static') return staticSettingsForm();
   let members = [...S.trip.members];
   const used = m => S.expenses.some(e => e.paidBy === m || (e.splits && m in e.splits)) || S.payments.some(p => p.from === m || p.to === m);
   const drawMembers = () => {
@@ -603,12 +734,7 @@ function settingsForm() {
   $('#newMem').onkeydown = ev => { if (ev.key === 'Enter') { ev.preventDefault(); add(); } };
   $('#memList').onclick = ev => { const m = ev.target.dataset.rm; if (m) { members = members.filter(x => x !== m); drawMembers(); } };
   $('#exportJson').onclick = () => download('trip-data.json', JSON.stringify(S, null, 2), 'application/json');
-  $('#exportCsv').onclick = () => {
-    const M = S.trip.members, q = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
-    const rows = [['Tanggal', 'Keterangan', 'Kategori', 'Jumlah', 'Dibayar oleh', ...M].map(q).join(',')];
-    S.expenses.forEach(e => rows.push([e.date, e.desc, e.category, e.amount, e.paidBy, ...M.map(m => e.splits?.[m] || 0)].map(q).join(',')));
-    download('pengeluaran.csv', '﻿' + rows.join('\n'), 'text/csv');
-  };
+  $('#exportCsv').onclick = exportCsv;
   $('#reimport').onclick = async () => {
     closeModal();
     if (!(await ask('Import ulang dari Excel?', 'Semua data akan ditimpa dengan isi file Excel. Perubahan yang dibuat di aplikasi akan hilang.', 'Timpa data'))) return;
@@ -662,10 +788,24 @@ $('#modalForm').addEventListener('submit', ev => {
 });
 
 (async () => {
+  // Server available (npm start)? Use it. Otherwise (GitHub Pages / static hosting) read the Sheet directly.
+  let server = false;
   try {
-    [S, SYNC] = await Promise.all([api('GET', '/api/data'), api('GET', '/api/sync')]);
+    const r = await fetch('api/data', { cache: 'no-store' });
+    server = r.ok && (r.headers.get('content-type') || '').includes('json');
+    if (server) { S = await r.json(); SYNC = await api('GET', 'api/sync'); }
+  } catch (e) { server = false; }
+
+  if (server) {
     render(); renderSyncBadge();
     if (SYNC.auto && (SYNC.sheetUrl || SYNC.scriptUrl) && !SYNC.dirty) doPull({ silent: true });
+    return;
   }
-  catch (e) { $('#view').innerHTML = `<div class="card empty">Gagal memuat data: ${esc(e.message)}<br>Pastikan server berjalan (<code>npm start</code>).</div>`; }
+  MODE = 'static';
+  document.body.classList.add('static-mode');
+  const cached = LS.get('trip-cache', null);
+  if (cached) { S = applyLocal(cached); render(); }
+  else $('#view').innerHTML = '<div class="card empty">Mengambil data dari Google Sheet…</div>';
+  renderSyncBadge();
+  doPull({ silent: !!cached });
 })();

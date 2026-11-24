@@ -228,3 +228,11 @@ code { background: var(--surface-2); padding: 1px 5px; border-radius: 4px; font-
 .warn-tag { background: color-mix(in srgb, var(--warn) 15%, transparent); color: var(--warn); cursor: help; }
 
 td.num { white-space: nowrap; }
+
+/* ===== static (GitHub Pages) mode ===== */
+.sheet-banner { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; background: var(--accent-soft); color: var(--text); border-radius: 10px; padding: 10px 14px; margin-bottom: 14px; font-size: 13px; }
+.static-mode .exp-row { grid-template-columns: 44px 1fr auto; }
+.static-mode .exp-row > div:last-child:empty { display: none; }
+.static-mode .tl-item { grid-template-columns: 26px 92px 1fr; }
+.static-mode .tl-item > div:last-child:empty { display: none; }
+@media (max-width: 640px) { .static-mode .exp-row { grid-template-columns: 40px 1fr auto; } .static-mode .tl-item { grid-template-columns: 22px 70px 1fr; } }

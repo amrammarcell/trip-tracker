@@ -20,5 +20,15 @@ Lalu buka http://localhost:3000. Di Windows bisa juga klik dua kali `app/start.b
 
 Detail lengkap ada di [app/README.md](app/README.md).
 
+## Versi online (GitHub Pages)
+Setiap push ke `main` yang mengubah `app/public/` akan otomatis di-deploy ke GitHub Pages lewat workflow `.github/workflows/pages.yml`.
+
+Versi online tidak punya server, jadi:
+- Data pengeluaran & itinerary diambil **langsung dari Google Sheet** (link-nya ada di `app/public/config.js`) setiap kali halaman dibuka, lalu otomatis setiap 1 menit. Untuk mengubah data, edit di Sheet.
+- Pembayaran ("Tandai lunas"), centang itinerary, nama trip, dan budget disimpan **di browser masing-masing**, jadi tidak terlihat di perangkat lain.
+- Situsnya publik. Siapa pun yang tahu alamatnya bisa melihat isi Sheet.
+
+Pengaturan awal (sekali saja): buka **Settings → Pages → Source: GitHub Actions**.
+
 ## Data
 Data tersimpan di `app/data/` (tidak ikut di-commit). Saat pertama kali dijalankan, data diambil dari `FILE KEUANGAN NEGARA.xlsx` di root repo kalau file itu ada.
